@@ -1,17 +1,19 @@
-//     gridstack.js 0.2.4-dev
-//     http://troolee.github.io/gridstack.js/
-//     (c) 2014-2015 Pavel Reznikov
-//     gridstack.js may be freely distributed under the MIT license.
-
+/**
+ * gridstack.js 0.2.5-dev
+ * http://troolee.github.io/gridstack.js/
+ * (c) 2014-2016 Pavel Reznikov
+ * gridstack.js may be freely distributed under the MIT license.
+ * @preserve
+*/
 (function(factory) {
     if (typeof define === 'function' && define.amd) {
         define(['jquery', 'lodash', 'jquery-ui/core', 'jquery-ui/widget', 'jquery-ui/mouse', 'jquery-ui/draggable',
             'jquery-ui/resizable'], factory);
     }
     else if (typeof exports !== 'undefined') {
-        try { jQuery = require('jquery'); } catch(e) {}
-        try { _ = require('lodash'); } catch(e) {}
-        factory(jQuery, _);
+      try { jQuery = require('jquery'); } catch(e) {}
+      try { _ = require('lodash'); } catch(e) {}
+      factory(jQuery, _);
     }
     else {
         factory(jQuery, _);
@@ -104,9 +106,9 @@
         }
 
         while (true) {
-            var collision_node = _.find(this.nodes, function(n) {
+            var collision_node = _.find(this.nodes, _.bind(function(n) {
                 return n != node && Utils.is_intercepted(n, nn);
-            }, this);
+            }, this));
             if (typeof collision_node == 'undefined') {
                 return;
             }
@@ -117,9 +119,9 @@
 
     GridStackEngine.prototype.is_area_empty = function(x, y, width, height) {
         var nn = {x: x || 0, y: y || 0, width: width || 1, height: height || 1};
-        var collision_node = _.find(this.nodes, function(n) {
+        var collision_node = _.find(this.nodes, _.bind(function(n) {
             return Utils.is_intercepted(n, nn);
-        }, this);
+        }, this));
         return collision_node == null;
     };
 
@@ -131,7 +133,7 @@
         this._sort_nodes();
 
         if (this.float) {
-            _.each(this.nodes, function(n, i) {
+            _.each(this.nodes, _.bind(function(n, i) {
                 if (n._updating || typeof n._orig_y == 'undefined' || n.y == n._orig_y)
                     return;
 
@@ -150,10 +152,10 @@
                     }
                     --new_y;
                 }
-            }, this);
+            }, this));
         }
         else {
-            _.each(this.nodes, function(n, i) {
+            _.each(this.nodes, _.bind(function(n, i) {
                 if (n.locked)
                     return;
                 while (n.y > 0) {
@@ -176,7 +178,7 @@
                     n._dirty = n.y != new_y;
                     n.y = new_y;
                 }
-            }, this);
+            }, this));
         }
     };
 
@@ -259,8 +261,8 @@
                     continue;
                 }
                 if (!_.find(this.nodes, function(n) {
-                        return Utils.is_intercepted({x: x, y: y, width: node.width, height: node.height}, n);
-                    })) {
+                    return Utils.is_intercepted({x: x, y: y, width: node.width, height: node.height}, n);
+                })) {
                     node.x = x;
                     node.y = y;
                     break;
@@ -400,6 +402,7 @@
             height: parseInt(this.container.attr('data-gs-height')) || 0,
             item_class: 'grid-stack-item',
             placeholder_class: 'grid-stack-placeholder',
+            placeholder_text: '',
             handle: '.grid-stack-item-content',
             handle_class: null,
             cell_height: 60,
@@ -408,7 +411,7 @@
             min_width: 768,
             float: false,
             static_grid: false,
-            _class: 'grid-stack-' + (Math.random() * 10000).toFixed(0),
+            _class: 'grid-stack-instance-' + (Math.random() * 10000).toFixed(0),
             animate: Boolean(this.container.attr('data-gs-animate')) || false,
             always_show_resize_handle: opts.always_show_resize_handle || false,
             resizable: _.defaults(opts.resizable || {}, {
@@ -470,7 +473,7 @@
 
         this.placeholder = $(
             '<div class="' + this.opts.placeholder_class + ' ' + this.opts.item_class + '">' +
-            '<div class="placeholder-content" /></div>').hide();
+            '<div class="placeholder-content">' + this.opts.placeholder_text + '</div></div>').hide();
 
         this.container.height(
             this.grid.get_grid_height() * (this.opts.cell_height + this.opts.vertical_margin) -
@@ -635,12 +638,28 @@
 
         var cell_width, cell_height;
 
+        var drag_or_resize = function(event, ui) {
+            var x = Math.round(ui.position.left / cell_width),
+                y = Math.floor((ui.position.top + cell_height / 2) / cell_height),
+                width, height;
+            if (event.type != "drag") {
+                width = Math.round(ui.size.width / cell_width);
+                height = Math.round(ui.size.height / cell_height);
+            }
+
+            if (!self.grid.can_move_node(node, x, y, width, height)) {
+                return;
+            }
+            self.grid.move_node(node, x, y, width, height);
+            self._update_container_height();
+        };
+
         var on_start_moving = function(event, ui) {
             self.container.append(self.placeholder);
             var o = $(this);
             self.grid.clean_nodes();
             self.grid.begin_update(node);
-            cell_width = Math.ceil(o.outerWidth() / o.attr('data-gs-width'));
+            cell_width = o.outerWidth() / o.attr('data-gs-width');
             cell_height = self.opts.cell_height + self.opts.vertical_margin;
             self.placeholder
                 .attr('data-gs-x', o.attr('data-gs-x'))
@@ -650,8 +669,12 @@
                 .show();
             node.el = self.placeholder;
 
-            el.resizable('option', 'minWidth', cell_width * (node.min_width || 1));
+            el.resizable('option', 'minWidth', Math.round(cell_width * (node.min_width || 1)));
             el.resizable('option', 'minHeight', self.opts.cell_height * (node.min_height || 1));
+
+            if (event.type == 'resizestart') {
+                o.find('.grid-stack-item').trigger('resizestart');
+            }
         };
 
         var on_end_moving = function(event, ui) {
@@ -669,36 +692,28 @@
             self._trigger_change_event();
 
             self.grid.end_update();
+
+            var nested_grids = o.find('.grid-stack');
+            if (nested_grids.length && event.type == 'resizestop') {
+                nested_grids.each(function(index, el) {
+                    $(el).data('gridstack').on_resize_handler();
+                });
+                o.find('.grid-stack-item').trigger('resizestop');
+            }
         };
 
-        el.draggable(_.extend(this.opts.draggable, {
-            start: on_start_moving,
-            stop: on_end_moving,
-            drag: function(event, ui) {
-                var x = Math.round(ui.position.left / cell_width),
-                    y = Math.floor((ui.position.top + cell_height / 2) / cell_height);
-                if (!self.grid.can_move_node(node, x, y, node.width, node.height)) {
-                    return;
-                }
-                self.grid.move_node(node, x, y);
-                self._update_container_height();
-            },
-            containment: this.opts.is_nested ? this.container.parent() : null
-        })).resizable(_.extend(this.opts.resizable, {
-            start: on_start_moving,
-            stop: on_end_moving,
-            resize: function(event, ui) {
-                var x = Math.round(ui.position.left / cell_width),
-                    y = Math.floor((ui.position.top + cell_height / 2) / cell_height),
-                    width = Math.round(ui.size.width / cell_width),
-                    height = Math.round(ui.size.height / cell_height);
-                if (!self.grid.can_move_node(node, x, y, width, height)) {
-                    return;
-                }
-                self.grid.move_node(node, x, y, width, height);
-                self._update_container_height();
-            }
-        }));
+        el
+            .draggable(_.extend(this.opts.draggable, {
+                containment: this.opts.is_nested ? this.container.parent() : null,
+                start: on_start_moving,
+                stop: on_end_moving,
+                drag: drag_or_resize
+            }))
+            .resizable(_.extend(this.opts.resizable, {
+                start: on_start_moving,
+                stop: on_end_moving,
+                resize: drag_or_resize
+            }));
 
         if (node.no_move || this._is_one_column_mode()) {
             el.draggable('disable');
@@ -735,6 +750,15 @@
         return el;
     };
 
+    GridStack.prototype.make_widget = function(el) {
+        el = $(el);
+        this._prepare_element(el);
+        this._update_container_height();
+        this._trigger_change_event(true);
+
+        return el;
+    };
+
     GridStack.prototype.will_it_fit = function(x, y, width, height, auto_position) {
         var node = {x: x, y: y, width: width, height: height, auto_position: auto_position};
         return this.grid.can_be_placed_with_respect_to_height(node);
@@ -753,9 +777,9 @@
     };
 
     GridStack.prototype.remove_all = function(detach_node) {
-        _.each(this.grid.nodes, function(node) {
+        _.each(this.grid.nodes, _.bind(function(node) {
             this.remove_widget(node.el, detach_node);
-        }, this);
+        }, this));
         this.grid.nodes = [];
         this._update_container_height();
     };
@@ -770,6 +794,7 @@
     };
 
     GridStack.prototype.resizable = function(el, val) {
+        var self = this;
         el = $(el);
         el.each(function(index, el) {
             el = $(el);
@@ -779,7 +804,7 @@
             }
 
             node.no_resize = !(val || false);
-            if (node.no_resize) {
+            if (node.no_resize || self._is_one_column_mode()) {
                 el.resizable('disable');
             }
             else {
@@ -790,6 +815,7 @@
     };
 
     GridStack.prototype.movable = function(el, val) {
+        var self = this;
         el = $(el);
         el.each(function(index, el) {
             el = $(el);
@@ -799,11 +825,13 @@
             }
 
             node.no_move = !(val || false);
-            if (node.no_move) {
+            if (node.no_move || self._is_one_column_mode()) {
                 el.draggable('disable');
+                el.removeClass('ui-draggable-handle');
             }
             else {
                 el.draggable('enable');
+                el.addClass('ui-draggable-handle');
             }
         });
         return this;
@@ -812,11 +840,13 @@
     GridStack.prototype.disable = function() {
         this.movable(this.container.children('.' + this.opts.item_class), false);
         this.resizable(this.container.children('.' + this.opts.item_class), false);
+        this.container.trigger('disable');
     };
 
     GridStack.prototype.enable = function() {
         this.movable(this.container.children('.' + this.opts.item_class), true);
         this.resizable(this.container.children('.' + this.opts.item_class), true);
+        this.container.trigger('enable');
     };
 
     GridStack.prototype.locked = function(el, val) {
@@ -978,8 +1008,10 @@
 
     $.fn.gridstack = function(opts) {
         return this.each(function() {
-            if (!$(this).data('gridstack')) {
-                $(this).data('gridstack', new GridStack(this, opts));
+            var o = $(this);
+            if (!o.data('gridstack')) {
+                o
+                    .data('gridstack', new GridStack(this, opts));
             }
         });
     };
